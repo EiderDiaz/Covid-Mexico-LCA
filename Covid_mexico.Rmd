@@ -1,0 +1,406 @@
+---
+title: "SSA_Mexico_Data"
+author: "Jose Tamez"
+date: "4/19/2020"
+output: html_document
+---
+
+
+```{r, echo = FALSE}
+#knitr::opts_chunk$set(collapse = TRUE, warning = FALSE, message = FALSE,comment = "#>")
+```
+
+# Covid19 Survival
+
+This document does the analysis of the patient level data set.
+
+
+Loading the libraries
+
+```{r results = "hide" }
+library("FRESA.CAD")
+library(epiR)
+library(fastAdaboost)
+repetitions = 300
+trainFraction = 0.90
+
+```
+
+## Load the data
+
+```{r}
+
+#COVID19MEXICO <- read.csv("./200420COVID19MEXICO.csv",
+#                           na.strings="99",stringsAsFactors = FALSE)
+COVID19MEXICO <- read.csv("C:/Users/eider/Dropbox/AD experiments/Covid_mexico/200503COVID19MEXICO.csv",na.strings="99",stringsAsFactors = FALSE)
+#COVID19MEXICO <- read_csv("200503COVID19MEXICO.csv",na = "99")
+
+```
+
+## Cleaning the data
+ se seleccionan las variables para crear los modelos
+ se seleccionan solo los casos positivos de covid
+ se seleccionan los que tienen fecha de defuncion valida o entraron a cuidados intensivos como outome =1 , los demas 0
+ 
+
+```{r}
+colnamesMexico <- colnames(COVID19MEXICO)
+
+varnames <- c("SEXO","TIPO_PACIENTE","FECHA_INGRESO","FECHA_SINTOMAS","FECHA_DEF",
+              "INTUBADO","NEUMONIA","EDAD","EMBARAZO","DIABETES","EPOC","ASMA","INMUSUPR",
+              "HIPERTENSION","OTRA_COM","CARDIOVASCULAR","OBESIDAD","RENAL_CRONICA",
+              "TABAQUISMO","OTRO_CASO","RESULTADO","UCI")
+
+varnames[!(varnames %in% colnamesMexico)]
+colnamesMexicoComplete <- COVID19MEXICO[,varnames]
+colnamesMexicoComplete <- colnamesMexicoComplete[complete.cases(colnamesMexicoComplete),]
+
+for (vn in varnames) {
+  print(vn)
+  tb <- table(colnamesMexicoComplete[,vn])
+  if (length(tb)<5){
+    colnamesMexicoComplete[,vn] <- 1*(colnamesMexicoComplete[,vn] == 1)
+    tb <- table(colnamesMexicoComplete[,vn])
+  }
+  print(tb)
+}
+
+varforDiagnosisCovid <- c("SEXO","FECHA_DEF","EDAD","EMBARAZO","DIABETES","EPOC","ASMA","INMUSUPR","HIPERTENSION","OTRA_COM","CARDIOVASCULAR","OBESIDAD","RENAL_CRONICA","TABAQUISMO","RESULTADO","UCI")
+#selecting just the variables needed 
+datosDiagnosticoAlta <- colnamesMexicoComplete[,varforDiagnosisCovid] 
+#solo los que dieron positivo a covid
+datosDiagnosticoAlta <- subset(datosDiagnosticoAlta, RESULTADO == 1)
+datosDiagnosticoAlta$RESULTADO <- NULL
+#pacientes que no tienen una fecha insespecificada de defuncion O si entraton a cuidados intensivos
+datosDiagnosticoAlta$outcome <- 1*(datosDiagnosticoAlta$FECHA_DEF != "9999-99-99" | datosDiagnosticoAlta$UCI == 1)
+datosDiagnosticoAlta$FECHA_DEF <- NULL
+datosDiagnosticoAlta$UCI <- NULL
+
+table(datosDiagnosticoAlta$outcome)
+
+```
+
+
+```{r}
+datosDiagnosticoAlta.mat <- as.data.frame(model.matrix(outcome ~ SEXO*.,datosDiagnosticoAlta))
+
+datosDiagnosticoAlta.mat$`SEXO:EDAD` <- NULL
+
+#datosDiagnosticoAlta.mat <- as.data.frame(model.matrix(outcome ~ (SEXO+DIABETES+HIPERTENSION)*.,datosDiagnosticoAlta))
+#datosDiagnosticoAlta.mat$SEXO.EDAD <- NULL
+#datosDiagnosticoAlta.mat$`DIABETES:EDAD` <- NULL
+#datosDiagnosticoAlta.mat$`HIPERTENSION:EDAD` <- NULL
+
+
+datosDiagnosticoAlta.mat$`(Intercept)` <- NULL
+datosDiagnosticoAlta.mat$outcome <- as.numeric(datosDiagnosticoAlta$outcome)
+fnames <- colnames(datosDiagnosticoAlta.mat)
+fnames <- str_replace_all(fnames," ","_")
+fnames <- str_replace_all(fnames,"/","_")
+fnames <- str_replace_all(fnames,":","_")
+fnames <- str_replace_all(fnames,"//.","_")
+colnames(datosDiagnosticoAlta.mat) <- fnames
+
+
+datosDiagnosticoAlta <- datosDiagnosticoAlta.mat
+
+
+caseSet <- subset(datosDiagnosticoAlta,outcome==1)
+controlSet <- subset(datosDiagnosticoAlta,outcome==0)
+
+# 70 % of the covid cases
+samplesCasetrain <- sample(nrow(caseSet),0.70*nrow(caseSet))
+# subseting the 70% 
+trainingCaseset <- caseSet[samplesCasetrain,]
+
+# 500 control cases
+samplesControltrain <- sample(nrow(controlSet),500)
+#subseting 500 control cases
+trainingControlset <- controlSet[samplesControltrain,]
+
+table(datosDiagnosticoAlta$outcome)
+#merge 70% of data with cases and 500 training scores
+trainingset <- rbind(trainingCaseset,trainingControlset)
+
+# selecting the remaining 30% of positive covid cases
+controltestset <- controlSet[-samplesControltrain,]
+# merge the remaining 30 and the controlsetttest
+testingset <- rbind(caseSet[-samplesCasetrain,],controltestset[sample(nrow(controltestset),1000),])
+
+table(trainingset$outcome)
+plot.new()
+op <- par(no.readonly = TRUE)
+
+```
+
+
+
+```{r}
+HLCM_COVID <- HLCM_EM(outcome ~.,trainingset )
+
+table(HLCM_COVID$classSet,trainingset$outcome)
+
+#unique(var$classModel)
+
+HLCM_COVID_2 <- HLCM(outcome ~.,trainingset )
+table(HLCM_COVID_2$classSet,trainingset$outcome)
+
+```
+
+```{r}
+HLCM_COVID_3 <- HLCM( outcome ~.,trainingset, method=adaboost ,
+                      asFactor = TRUE,
+                  nIter=10)
+table(HLCM_COVID_3$classSet,trainingset$outcome)
+
+HLCM_COVID_4 <- HLCM_EM( outcome ~.,trainingset, method=adaboost ,
+                      asFactor = TRUE,
+                  nIter=10)
+table(HLCM_COVID_4$classSet,trainingset$outcome)
+
+```
+
+
+
+```{r}
+trainingset_norm <- scale(trainingset)
+
+data_clsuter_4<- cbind(trainingset_norm,cluster=HLCM_COVID_4$classSet)
+data_clsuter_4 <- as.data.frame(data_clsuter_4)
+
+
+ ggplot(data = data_clsuter_4, aes(x=as.factor(SEXO), y=EDAD)) + 
+             geom_boxplot(aes(fill=as.factor(SEXO)))+
+ facet_wrap( ~ as.factor(cluster), scales="free") +
+   ggtitle("HCLM_EM + ADABOOST CLUSTERS ") +
+   theme(legend.position = "none")
+ 
+
+
+```
+
+
+
+
+
+```{r}
+
+ data_clsuter_3<- cbind(trainingset_norm,cluster=HLCM_COVID_3$classSet)
+data_clsuter_3 <- as.data.frame(data_clsuter_3)
+
+
+ ggplot(data = data_clsuter_3, aes(x=as.factor(SEXO), y=EDAD)) + 
+             geom_boxplot(aes(fill=as.factor(SEXO)))+
+ facet_wrap( ~ as.factor(cluster), scales="free") +
+   ggtitle("HCLM + ADABOOST CLUSTERS ") +
+   theme(legend.position = "none")
+ 
+```
+
+```{r}
+
+
+ data_clsuter_2<- cbind(trainingset_norm,cluster=HLCM_COVID_2$classSet)
+data_clsuter_2 <- as.data.frame(data_clsuter_2)
+
+
+ ggplot(data = data_clsuter_2, aes(x=as.factor(SEXO), y=EDAD)) + 
+             geom_boxplot(aes(fill=as.factor(SEXO)))+
+ facet_wrap( ~ as.factor(cluster), scales="free") +
+   ggtitle("HCLM + BSWIMS CLUSTERS ") +
+   theme(legend.position = "none")
+ 
+ 
+#p + facet_wrap( ~ cluster, scales="free")
+
+
+```
+
+
+```{r}
+ data_clsuter_1<- cbind(trainingset_norm,cluster=HLCM_COVID$classSet)
+data_clsuter_1 <- as.data.frame(data_clsuter_1)
+
+
+ ggplot(data = data_clsuter_3, aes(x=as.factor(SEXO), y=EDAD)) + 
+             geom_boxplot(aes(fill=as.factor(SEXO)))+
+ facet_wrap( ~ as.factor(cluster), scales="free") +
+   ggtitle("HCLM_EM + BSWIMS CLUSTERS ") +
+   theme(legend.position = "none")
+```
+
+
+```{r}
+names(HLCM_COVID_4$classSet) <- rownames(trainingset)
+
+
+
+
+
+columns <- list()
+index =1
+for (cluster in unique(HLCM_COVID_4$classSet)) {
+  
+  columns[[index]] <-  HLCM_COVID_4$classSet == cluster
+  index= index+1
+}
+index=1
+cluster_i <- list()
+for (column in columns){
+  cluster_i[[index]] = trainingset[column,]
+  index=index+1
+}
+
+
+```
+
+## logistic Model
+
+```{r results = "hide", dpi=600, fig.height= 6.0, fig.width= 6.0}
+lmodel <- glm(outcome~.,trainingset,family=binomial(link=logit))
+
+```
+
+### Logistic Results
+
+```{r results = "asis", dpi=600, fig.height= 6.0, fig.width= 6.0}
+par(op)
+
+cStats <- predictionStats_binary(cbind(trainingset$outcome,predict(lmodel,trainingset)),plotname = "Logit");
+
+
+sm <- summary(lmodel)
+pander::pander(sm$coefficients)
+
+testResult <-  predict(lmodel,testingset)
+testTable <- table(testResult < 0,testingset$outcome==0)
+pt <- epi.tests(testTable)
+
+cStats <- predictionStats_binary(cbind(testingset$outcome,testResult),plotname = "Logit Testing");
+
+pander::pander(cStats$ROC.analysis$ROC.AUCs)
+pander::pander(pt$tab)
+pander::pander(pt$rval)
+```
+
+
+```{r results = "hide", dpi=600, fig.height= 6.0, fig.width= 6.0}
+bm <- BSWiMS.model(outcome ~ .,trainingset,NumberofRepeats = -100)
+
+```
+
+### Results
+
+```{r results = "asis", dpi=600, fig.height= 6.0, fig.width= 6.0}
+par(op)
+pander::pander(bm$univariate)
+
+cStats <- predictionStats_binary(cbind(trainingset$outcome,predict(bm,trainingset)),plotname = "BSWiMS");
+plot(predict(bm,trainingset),predict(bm$bagging$bagged.model,trainingset))
+
+sm <- summary(bm)
+pander::pander(sm$coefficients)
+
+par(op)
+
+#gplots::heatmap.2(bm$bagging$formulaNetwork,trace="none",mar = c(10,10),main = "B:SWiMS Formula Network",cexRow = 0.75,cexCol = 0.75)
+
+testResult <-  predict(bm,testingset)
+testTable <- table(testResult < 0.5,testingset$outcome==0)
+
+ptbs <- epi.tests(testTable)
+
+cStats <- predictionStats_binary(cbind(testingset$outcome,testResult),plotname = "BSWiMS Testing");
+cStats <- predictionStats_binary(cbind(testingset$outcome,predict(bm$bagging$bagged.model,testingset)),plotname = "BSWiMS Testing");
+plot(predict(bm,testingset),predict(bm$bagging$bagged.model,testingset))
+
+pander::pander(cStats$ROC.analysis$ROC.AUCs)
+pander::pander(ptbs$rval)
+pander::pander(ptbs$tab)
+
+
+
+
+```
+
+
+
+### Riks Charts
+
+
+```{r results = "asis", dpi=600, fig.height= 6.0, fig.width= 6.0}
+par(op)
+
+colfeat <- rownames(bm$bagging$formulaNetwork)
+
+riskhealtyage <- as.data.frame(cbind(outcome=rep(0,71),EDAD=c(20:90)))
+for (cname in  colfeat[-1])
+{
+  riskhealtyage <- cbind(riskhealtyage,rep(0,nrow(riskhealtyage)))
+}
+colnames(riskhealtyage ) <- c("outcome","EDAD",colfeat[!(colfeat %in% c("EDAD"))])
+baserisktable <- riskhealtyage
+colfeat <- colnames(riskhealtyage)[-1]
+baseprobability <- predict(bm,riskhealtyage);
+plot(baseprobability~riskhealtyage$EDAD,type="l",col=1,xlab="Age",ylab="p(Death or ICU)",ylim=c(0,1),main="Probability of Death or ICU (Postive COVID-19)",lty=1,lwd=2)
+
+nc=2;
+for (cname in  colfeat[!(colfeat %in% c("EDAD"))])
+{
+  nriskhealtyage <- riskhealtyage; 
+  nriskhealtyage[,cname] <- rep(1,nrow(riskhealtyage)) 
+   riskprobability <- predict(bm,nriskhealtyage);
+  lines(riskprobability~riskhealtyage$EDAD,col=nc,lty=nc,lwd=2)
+   nc <- nc + 1
+}
+
+leynames <- c("Baseline",colfeat[-1])  
+legend("topleft",legend = leynames,lty=c(1:length(colfeat)),col =c(1:length(colfeat)),lwd=2,cex=0.75)
+
+plot(baseprobability~riskhealtyage$EDAD,type="l",col=1,xlab="Age",ylab="p(Death or ICU)",ylim=c(0,1),main="Probability of Death or ICU Diabetes (Postive COVID-19)",lty=1,lwd=2)
+riskhealtyage[,"DIABETES"] <- rep(1,nrow(riskhealtyage)) 
+nc=2;
+for (cname in  colfeat[!(colfeat %in% c("EDAD","DIABETES"))])
+{
+  nriskhealtyage <- riskhealtyage; 
+  nriskhealtyage[,cname] <- rep(1,nrow(riskhealtyage)) 
+   riskprobability <- predict(bm,nriskhealtyage);
+  lines(riskprobability~riskhealtyage$EDAD,col=nc,lty=nc,lwd=2)
+   nc <- nc + 1
+}
+legend("topleft",legend = leynames[!(leynames %in% c("DIABETES"))],lty=c(1:length(colfeat)),col =c(1:length(colfeat)),lwd=2,cex=0.75)
+
+plot(baseprobability~riskhealtyage$EDAD,type="l",col=1,xlab="Age",ylab="p(Death or ICU)",ylim=c(0,1),main="Probability of Death or ICU Hipertension (Postive COVID-19)",lty=1,lwd=2)
+riskhealtyage <- baserisktable
+riskhealtyage[,"HIPERTENSION"] <- rep(1,nrow(riskhealtyage)) 
+nc=2;
+for (cname in  colfeat[!(colfeat %in% c("EDAD","HIPERTENSION"))])
+{
+  nriskhealtyage <- riskhealtyage; 
+  nriskhealtyage[,cname] <- rep(1,nrow(riskhealtyage)) 
+   riskprobability <- predict(bm,nriskhealtyage);
+  lines(riskprobability~riskhealtyage$EDAD,col=nc,lty=nc,lwd=2)
+   nc <- nc + 1
+}
+  
+legend("topleft",legend = leynames[!(leynames %in% c("HIPERTENSION"))],lty=c(1:length(colfeat)),col =c(1:length(colfeat)),lwd=2,cex=0.75)
+
+
+plot(baseprobability~riskhealtyage$EDAD,type="l",col=1,xlab="Age",ylab="p(Death or ICU)",ylim=c(0,1),main="Probability of Death or ICU Hipertension and Diabetes (Postive COVID-19)",lty=1,lwd=2)
+riskhealtyage <- baserisktable
+riskhealtyage[,"HIPERTENSION"] <- rep(1,nrow(riskhealtyage)) 
+riskhealtyage[,"DIABETES"] <- rep(1,nrow(riskhealtyage)) 
+nc=2;
+for (cname in  colfeat[!(colfeat %in% c("EDAD","HIPERTENSION","DIABETES"))])
+{
+  nriskhealtyage <- riskhealtyage; 
+  nriskhealtyage[,cname] <- rep(1,nrow(riskhealtyage)) 
+   riskprobability <- predict(bm,nriskhealtyage);
+  lines(riskprobability~riskhealtyage$EDAD,col=nc,lty=nc,lwd=2)
+   nc <- nc + 1
+}
+  
+legend("topleft",legend = leynames[!(leynames %in% c("HIPERTENSION","DIABETES"))],lty=c(1:length(colfeat)),col =c(1:length(colfeat)),lwd=2,cex=0.75)
+
+```
+

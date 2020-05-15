@@ -1,0 +1,366 @@
+---
+title: "covid_mexico_clusters"
+author: "eider"
+date: "5/12/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r }
+library("FRESA.CAD")
+library(epiR)
+library(fastAdaboost)
+library(fmsb)
+library(colormap)
+library(Rtsne)
+
+repetitions = 300
+trainFraction = 0.90
+
+setwd("C:/Users/eider/Dropbox/AD experiments/Covid_mexico/")
+```
+
+
+```{r}
+COVID19MEXICO <- read.csv("200512COVID19MEXICO.csv",na.strings="99",stringsAsFactors = FALSE)
+
+```
+
+# Cleaning the data
+ se seleccionan las variables para crear los modelos
+ se seleccionan solo los casos positivos de covid
+ se seleccionan los que tienen fecha de defuncion valida o entraron a cuidados intensivos como outome =1 , los demas 0
+ 
+```{r}
+colnamesMexico <- colnames(COVID19MEXICO)
+
+varnames <- c("SEXO","TIPO_PACIENTE","FECHA_INGRESO","FECHA_SINTOMAS","FECHA_DEF",
+              "INTUBADO","NEUMONIA","EDAD","EMBARAZO","DIABETES","EPOC","ASMA","INMUSUPR",
+              "HIPERTENSION","OTRA_COM","CARDIOVASCULAR","OBESIDAD","RENAL_CRONICA",
+              "TABAQUISMO","OTRO_CASO","RESULTADO","UCI")
+
+
+colnamesMexicoComplete <- COVID19MEXICO[,varnames]
+colnamesMexicoComplete <- colnamesMexicoComplete[complete.cases(colnamesMexicoComplete),]
+
+varforDiagnosisCovid <- c("SEXO","FECHA_DEF","EDAD","EMBARAZO","DIABETES","EPOC","ASMA","INMUSUPR","HIPERTENSION","OTRA_COM","CARDIOVASCULAR","OBESIDAD","RENAL_CRONICA","TABAQUISMO","RESULTADO","UCI")
+
+# selecting just the variables needed 
+datosDiagnosticoAlta <- colnamesMexicoComplete[,varforDiagnosisCovid] 
+
+# solo los que dieron positivo a covid
+datosDiagnosticoAlta <- subset(datosDiagnosticoAlta, RESULTADO == 1)
+save(datosDiagnosticoAlta,file="datosDiagnosticoAlta.RDATA")
+datosDiagnosticoAlta$RESULTADO <- NULL
+#pacientes difuntos O si entraton a cuidados intensivos (UCI)
+datosDiagnosticoAlta$outcome <- 1*(datosDiagnosticoAlta$FECHA_DEF != "9999-99-99" | datosDiagnosticoAlta$UCI == 1)
+
+datosDiagnosticoAlta$FECHA_DEF <- NULL
+datosDiagnosticoAlta$UCI <- NULL
+
+table(datosDiagnosticoAlta$outcome)
+
+```
+ 
+#spliting the dataset 
+- deberia de balancear mejor el split de train y test? 
+```{r}
+set.seed(42)
+caseSet <- subset(datosDiagnosticoAlta,outcome==1)
+controlSet <- subset(datosDiagnosticoAlta,outcome==0)
+
+# 70 % of the UCI or death cases
+samplesCasetrain <- sample(nrow(caseSet),0.70*nrow(caseSet))
+# subseting the 70% 
+trainingCaseset <- caseSet[samplesCasetrain,]
+
+# 500 control cases
+samplesControltrain <- sample(nrow(controlSet),500)
+#subseting 500 control cases
+trainingControlset <- controlSet[samplesControltrain,]
+#merge 70% of data with cases and 500 training scores
+trainingset <- rbind(trainingCaseset,trainingControlset)
+#######################TEST
+
+# selecting the remaining 30% of UCI and Death
+controltestset <- controlSet[-samplesControltrain,]
+# merge the remaining 30 and the controlsetttest
+testingset <- rbind(caseSet[-samplesCasetrain,],controltestset[sample(nrow(controltestset),1000),])
+
+```
+ 
+#HCLM + LASSO_1SE
+```{r}
+HLCM_LASSO_1SE <- HLCM(outcome ~.,trainingset, method=LASSO_1SE,
+                       repetitions = 75,
+                    family = "binomial")
+
+HLCM_LASSO_1SE_bs <- predictionStats_binary(cbind(testingset$outcome,
+                                   predict(HLCM_LASSO_1SE,testingset)),
+                                   "HLCM_LASSO_1SE",
+                                   cex=0.8)
+
+HLCM_EM_LASSO_1SE <- HLCM_EM(outcome ~.,trainingset, method=LASSO_1SE,
+                       repetitions = 75,
+                    family = "binomial")
+
+HLCM_EM_LASSO_1SE_bs <- predictionStats_binary(cbind(testingset$outcome,
+                                   predict(HLCM_EM_LASSO_1SE,testingset)),
+                                   "HLCM_EM_LASSO_1SE",
+                                   cex=0.8)
+
+```
+
+#pure HLCM (BSWIMS) 
+```{r}
+
+
+HLCM_model <- HLCM(outcome ~.,trainingset)
+
+HLCM_bs <- predictionStats_binary(cbind(testingset$outcome,
+                                   predict(HLCM_model,testingset)),
+                                   "HLCM",
+                                   cex=0.8)
+HLCM_EM_model <- HLCM_EM(outcome ~.,trainingset)
+
+HLCM_EM_bs <- predictionStats_binary(cbind(testingset$outcome,
+                                   predict(HLCM_EM_model,testingset)),
+                                   "HLCM_EM",
+                                   cex=0.8)
+```
+ 
+ ########### RANDOMCV
+ 
+```{r}
+repetitions = 100
+trainFraction = 0.70
+#lasso 1se
+HLCM_EM_cv <- randomCV(datosDiagnosticoAlta,
+                       "outcome",
+                       fittingFunction=HLCM_EM,
+                       trainFraction = trainFraction,
+                       repetitions = repetitions)
+```
+
+
+```{r}
+HLCM_EM_LASSO.SVM <- HLCM_EM(outcome ~ .,trainingset,
+              hysteresis = 0.1,
+              method=LASSO_1SE,
+              classMethod=e1071::svm,
+              classModel.Control=list(probability = TRUE),
+              family="binomial")
+
+testResult <-  predict(HLCM_EM_LASSO.SVM,testingset)
+lattentclass <- apply(attr(testResult,"probabilities"),1,which.max)
+table(lattentclass)
+table(lattentclass,testingset$outcome)
+testTable <- table(testResult < 0.5,testingset$outcome==0)
+epi.tests(testTable)
+cStats <- predictionStats_binary(cbind(testingset$outcome,testResult),plotname = "LASSO SVM")
+
+getLattentClasses <- function(lattentClassModel,testSet){
+  #get the results from test set
+  testResult <-  predict(lattentClassModel,testSet)
+  #from each observation get the max probabilty to belong to a given LC
+  lattentclass <- apply(attr(testResult,"probabilities"),1,which.max)
+  cat("Lattent Classes found: ",length(unique(lattentclass)))
+  lattentclass
+  
+}
+  
+lc <- getLattentClasses(HLCM_EM_LASSO.SVM,testingset)
+cat("Lattent classes found and its observations:",table(lattentclass))
+table(lc)
+cat("Lattent classes found vs Outcome :")
+table(lc,testSet$outcome)
+testTable <- table(testResult < 0.5,testingset$outcome==0)
+epi.tests(testTable)
+
+```
+
+
+
+#¿Puedes comparar las dos: LASSO vs BSWiMS?
+RADAR
+preguntas:
+deberia de filtrar a los clusters que tengan mayor a algun treshold de observaciones?
+alguna recomendacion para el hyperparamater del TSNE?
+```{r}
+
+#combinamos las clases resultantes del testset con 
+data_plus_LC<- cbind(testingset,lattentclass=lattentclass)
+#get the number of classes
+num_class= length(unique(lattentclass))
+#get the mean values of each cluster for each variable [1:14]
+mean_data_for_radar_1 <- aggregate(data_plus_LC[,1:14],
+                                   list(data_plus_LC$lattentclass),mean)
+#eliminate the latent class feature
+rownames(mean_data_for_radar_1) <- mean_data_for_radar_1[,1]
+mean_data_for_radar_1 <- mean_data_for_radar_1[,-1]
+#normalize
+mean_data_for_radar_1 <- scale(mean_data_for_radar_1)
+mean_data_for_radar_1 <- as.data.frame(mean_data_for_radar_1)
+#get the min and max per feature 
+colMax <-  sapply(mean_data_for_radar_1, max, na.rm = TRUE)
+colMin <- sapply(mean_data_for_radar_1, min, na.rm = TRUE)
+
+#merge
+mean_data_for_radar_1 <- rbind(colMax,colMin,mean_data_for_radar_1)
+
+
+# Prepare color
+colors_border=colormap(colormap=colormaps$viridis, nshades=num_class, alpha=1)
+colors_in=colormap(colormap=colormaps$viridis, nshades=num_class, alpha=0.3)
+
+# Prepare title
+mytitle <- c("cluster 1","cluster 2","cluster 3","cluster 4")
+
+# Loop for each plot
+for(i in 1:num_class){
+
+  # Custom the radarChart !
+  radarchart( mean_data_for_radar_1[c(1,2,i+2),], axistype=1, 
+  
+    #custom polygon
+    pcol=colors_border[i] , pfcol=colors_in[i] , plwd=4, plty=1 , 
+  
+    #custom the grid
+    cglcol="grey", cglty=1, axislabcol="grey",  cglwd=0.8,
+  
+    #custom labels
+    vlcex=0.8,
+    
+    #title
+    title=mytitle[i]
+    )
+}
+#for ploting
+colors = colormap(colormap=colormaps$viridis, nshades=num_class, alpha=1)
+
+tsne <- Rtsne(data_plus_LC[,-15], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500,check_duplicates = FALSE)
+
+plot(tsne$Y, t='n', main="tsne")
+text(tsne$Y, labels=data_plus_LC$outcome, col=colors[data_plus_LC$lattentclass])
+```
+ 
+
+
+```{r}
+
+#data must be in feature-outcome format
+radar_and_tsne_from_latentclass <- function(theData,theClasses){
+  #combinamos las clases resultantes con dataset 
+  data_plus_LC<- cbind(theData,lattentclass=theClasses)
+  #get the number of classes
+  num_class= length(unique(theClasses))
+  #get the number of features of the dataset (not includinf the latent class feature)
+  num_feat<- ncol(theData)
+  #get the mean values of each variable per each latent class  [1:14]
+  mean_data_per_LC <- aggregate(data_plus_LC[,1:num_feat],
+                                     list(data_plus_LC$lattentclass),
+                                     mean)
+  #eliminate the latent class feature
+  rownames(mean_data_per_LC) <- mean_data_per_LC[,1]
+  mean_data_per_LC <- mean_data_per_LC[,-1]
+  #normalize
+  norm_mean_data_per_LC <- scale(mean_data_per_LC)
+  norm_mean_data_per_LC <- as.data.frame(norm_mean_data_per_LC)
+  #get the min and max per feature 
+  colMax <-  sapply(norm_mean_data_per_LC, max, na.rm = TRUE)
+  colMin <- sapply(norm_mean_data_per_LC, min, na.rm = TRUE)
+  #merge with max and min since radar needs it to plot
+  data_for_radar <- rbind(colMax,colMin,norm_mean_data_per_LC)
+  
+  # Prepare color
+  colors_border=colormap(colormap=colormaps$viridis, nshades=num_class, alpha=1)
+  colors_in=colormap(colormap=colormaps$viridis, nshades=num_class, alpha=0.3)
+  mytitle <- paste0("Cluster [", seq(1:num_class), "]")
+  # Loop for each plot
+  for(i in 1:num_class){
+  
+    # Custom the radarChart !
+    radarchart( data_for_radar[c(1,2,i+2),], axistype=1, 
+    
+      #custom polygon
+      pcol=colors_border[i] , pfcol=colors_in[i] , plwd=4, plty=1 , 
+    
+      #custom the grid
+      cglcol="grey", cglty=1, axislabcol="grey",  cglwd=0.8,
+    
+      #custom labels
+      vlcex=0.8,
+      
+      #title
+      title=mytitle[i]
+      )
+  }
+  ################################TSNE
+  #sigo buscando como buscar unos buenos hyperparametros para el tsne
+  #https://towardsdatascience.com/how-to-tune-hyperparameters-of-tsne-7c0596a18868
+  tsne <- Rtsne(data_plus_LC[,-c(ncol(data_plus_LC)-1,ncol(data_plus_LC))], 
+                dims = 2,
+                perplexity=150,
+                verbose=TRUE,
+                max_iter = 2500,
+                check_duplicates = FALSE)
+
+  plot(tsne$Y, t='n', main="tsne")
+  text(tsne$Y, labels=as.factor(data_plus_LC$outcome), col=colors[data_plus_LC$lattentclass])
+  
+}
+set.seed(42)
+radar_and_tsne_from_latentclass(testingset,lattentclass)
+
+```
+
+
+```{r}
+HLCM_EM_BSWIMS.SVM <- HLCM_EM(outcome ~ .,trainingset,
+              hysteresis = 0.1,
+              classMethod=e1071::svm,
+              classModel.Control=list(probability = TRUE),
+              NumberofRepeats = -1)
+
+HLCM_EM_BSWIMS.SVM$selectedfeatures
+###########train
+trainResult <-  predict(HLCM_EM_LASSO,trainingset)
+#get the probabilites given a latent class 
+train_probs <- head(attr(trainResult,"probabilities"))
+train_probs
+#get the cluster given the max probabilities
+apply(train_probs,1,which.max)
+
+##get the probabilites given a latent class 
+lattentclass <- apply(attr(trainResult,"probabilities"),1,which.max)
+table(lattentclass)
+#compare the each cluster distribution of outcome 
+table(lattentclass,trainingset$outcome)
+#confusion matrix of trainset
+testTable <- table(trainResult < 0.5,trainingset$outcome==0)
+epi.tests(testTable)
+
+
+#############TEST SET
+testResult <-  predict(HLCM_EM_LASSO,testingset)
+lattentclass <- apply(attr(testResult,"probabilities"),1,which.max)
+table(lattentclass)
+table(lattentclass,testingset$outcome)
+testTable <- table(testResult < 0.5,testingset$outcome==0)
+epi.tests(testTable)
+cStats <- predictionStats_binary(cbind(testingset$outcome,testResult),plotname = "BSWiMS SVM")
+##################nuevo
+lc <- getLattentClasses(HLCM_EM_LASSO,testingset)
+cat("Lattent classes found and its observations:",table(lattentclass))
+table(lc)
+cat("Lattent classes found vs Outcome :")
+table(lc,testSet$outcome)
+testTable <- table(testResult < 0.5,testingset$outcome==0)
+epi.tests(testTable)
+
+
+```
+
+ 
