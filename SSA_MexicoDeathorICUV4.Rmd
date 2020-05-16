@@ -1,0 +1,212 @@
+---
+title: "SSA_Mexico_Data"
+author: "Jose Tamez"
+date: "4/19/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, warning = FALSE, message = FALSE,comment = "#>")
+```
+
+# Covid19 Survival
+
+This document does the analysis of the patient level data set.
+
+
+Loading the libraries
+
+```{r results = "hide" }
+library("FRESA.CAD")
+library(epiR)
+library(clValid)
+library(mclust)
+source('~/GitHub/EvalCluster/R/clusterStability.r')
+
+```
+
+## Load the data
+
+```{r}
+COVID19MEXICO <- read.csv("../Data/datos_abiertos_covid19/200514COVID19MEXICO.csv",
+                           na.strings="99",
+                          stringsAsFactors=FALSE)
+
+```
+
+## Cleaning the data
+
+```{r}
+colnamesMexico <- colnames(COVID19MEXICO)
+varnames <- c("SEXO","TIPO_PACIENTE","FECHA_INGRESO","FECHA_SINTOMAS","FECHA_DEF","INTUBADO","NEUMONIA","EDAD","EMBARAZO","DIABETES","EPOC","ASMA","INMUSUPR","HIPERTENSION","OTRA_COM","CARDIOVASCULAR","OBESIDAD","RENAL_CRONICA","TABAQUISMO","OTRO_CASO","RESULTADO","UCI")
+varnames[!(varnames %in% colnamesMexico)]
+colnamesMexicoComplete <- COVID19MEXICO[,varnames]
+colnamesMexicoComplete <- colnamesMexicoComplete[complete.cases(colnamesMexicoComplete),]
+
+for (vn in varnames)
+{
+  print(vn)
+  tb <- table(colnamesMexicoComplete[,vn])
+  if (length(tb)<5)
+  {
+    colnamesMexicoComplete[,vn] <- 1*(colnamesMexicoComplete[,vn] == 1)
+    tb <- table(colnamesMexicoComplete[,vn])
+  }
+  print(tb)
+}
+
+varforDiagnosisCovid <- c("SEXO","FECHA_DEF","EDAD","EMBARAZO","NEUMONIA","DIABETES","EPOC","ASMA","INMUSUPR","HIPERTENSION","OTRA_COM","CARDIOVASCULAR","OBESIDAD","RENAL_CRONICA","TABAQUISMO","RESULTADO","UCI")
+ 
+datosDiagnosticoAlta <- colnamesMexicoComplete[,varforDiagnosisCovid] 
+datosDiagnosticoAlta <- subset(datosDiagnosticoAlta,RESULTADO == 1)
+datosDiagnosticoAlta$RESULTADO <- NULL
+datosDiagnosticoAlta$outcome <- 1*(datosDiagnosticoAlta$FECHA_DEF != "9999-99-99" | datosDiagnosticoAlta$UCI == 1)
+datosDiagnosticoAlta$FECHA_DEF <- NULL
+datosDiagnosticoAlta$UCI <- NULL
+
+table(datosDiagnosticoAlta$outcome)
+
+```
+
+```{r}
+
+#datosDiagnosticoAlta$NEUMONIA <- NULL
+datosDiagnosticoAlta.mat <- as.data.frame(model.matrix(outcome ~ .,datosDiagnosticoAlta))
+#datosDiagnosticoAlta.mat <- as.data.frame(model.matrix(outcome ~ (EDAD+SEXO)*.,datosDiagnosticoAlta))
+#datosDiagnosticoAlta.mat <- as.data.frame(model.matrix(outcome ~ .*.,datosDiagnosticoAlta)) 
+#datosDiagnosticoAlta.mat$SEXO.EDAD <- NULL
+#datosDiagnosticoAlta.mat$`DIABETES:EDAD` <- NULL
+#datosDiagnosticoAlta.mat$`HIPERTENSION:EDAD` <- NULL
+
+
+datosDiagnosticoAlta.mat$`(Intercept)` <- NULL
+datosDiagnosticoAlta.mat$outcome <- as.numeric(datosDiagnosticoAlta$outcome)
+fnames <- colnames(datosDiagnosticoAlta.mat)
+fnames <- str_replace_all(fnames," ","_")
+fnames <- str_replace_all(fnames,"/","_")
+fnames <- str_replace_all(fnames,":","_")
+fnames <- str_replace_all(fnames,"//.","_")
+colnames(datosDiagnosticoAlta.mat) <- fnames
+
+
+datosDiagnosticoAlta <- datosDiagnosticoAlta.mat
+
+caseSet <- subset(datosDiagnosticoAlta,outcome==1)
+controlSet <- subset(datosDiagnosticoAlta,outcome==0)
+
+samplesCasetrain <- sample(nrow(caseSet),0.25*nrow(caseSet))
+trainingCaseset <- caseSet[samplesCasetrain,]
+
+samplesControltrain <- sample(nrow(controlSet),nrow(trainingCaseset))
+trainingControlset <- controlSet[samplesControltrain,]
+
+table(datosDiagnosticoAlta$outcome)
+
+trainingset <- rbind(trainingCaseset,trainingControlset)
+
+controltestset <- controlSet[-samplesControltrain,]
+casetestset <- caseSet[-samplesCasetrain,]
+testingset <- rbind(casetestset[sample(nrow(casetestset),500),],controltestset[sample(nrow(controltestset),500),])
+
+fulltestingset <- rbind(casetestset,controltestset)
+
+table(trainingset$outcome)
+plot.new()
+op <- par(no.readonly = TRUE)
+
+```
+
+```{r}
+latentClass <- function(data,formula,...)
+{
+  LASSOSVM <- HLCM_EM(formula,data,...);
+  result <- list(model=LASSOSVM)
+  class(result) <- "latentClass"
+  return (result)
+}
+
+predict.latentClass <- function(model,data)
+{
+  testResult <-  predict(model$model,data)
+  latentclass <- apply(attr(testResult,"probabilities"),1,which.max)
+  result <- list(classification = 2*latentclass + 1*(testResult >= 0.5),outcome=testResult,latentclass=latentclass)
+#  result <- list(classification = latentclass,outcome=testResult,latentclass=latentclass)
+  return(result)
+}
+
+```
+
+
+## Latent Class 2
+
+```{r}
+
+LASSOSVM <- latentClass(trainingset,
+              formula = outcome ~ .,
+              hysteresis = 0.10,
+              method=LASSO_1SE,
+               classMethod=e1071::svm,
+              classModel.Control=list(probability = TRUE),
+              family="binomial")
+
+prd <- predict(LASSOSVM,testingset)
+testTable <- table(prd$outcome<0.5,testingset$outcome==0)
+epi.tests(testTable)
+
+LASSOSVM$model$selectedfeatures
+
+clsta <- clusterStability(data=trainingset, 
+                          clustermethod=latentClass,
+                          randomTests = 200, 
+                          trainFraction = 0.75,
+                          formula = outcome ~ .,
+                          hysteresis = 0.10,
+                          method=LASSO_1SE,
+                           classMethod=e1071::svm,
+                          classModel.Control=list(probability = TRUE),
+                          family="binomial")
+
+save(clsta,file="Clustering_V4.Rdata")
+plot(clsta)
+summary(clsta)
+clsta$averageNumberofClusters
+
+ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.90,0.65,-0.05))
+table(ccluster,trainingset$outcome)
+testTable <- table(ccluster!=1 & ccluster!=3,trainingset$outcome==0)
+epi.tests(testTable)
+
+testTable <- table(ccluster==2,trainingset$outcome==0)
+epi.tests(testTable)
+
+heatmapsubsample <- sample(nrow(clsta$dataConcensus),500)
+mycolors <- c("red","green","blue","yellow","cyan","lightblue")
+rowcolors <- mycolors[1+ccluster[heatmapsubsample]]
+hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus[heatmapsubsample,heatmapsubsample]),
+                           RowSideColors = rowcolors ,
+                           ColSideColors = rowcolors ,
+                           trace="none",
+                           main="Cluster Co-Association")
+
+#heatmapsubsample <- sample(nrow(clsta$testConsesus),500)
+
+hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus[heatmapsubsample,heatmapsubsample]),
+                           RowSideColors = rowcolors ,
+                           ColSideColors = rowcolors ,
+                           trace="none",
+                           main="Cluster Co-Association")
+
+
+table(ccluster,trainingset$DIABETES)/sum(trainingset$DIABETES)
+table(ccluster,trainingset$HIPERTENSION)/sum(trainingset$HIPERTENSION)
+table(ccluster,trainingset$OBESIDAD)/sum(trainingset$OBESIDAD)
+table(ccluster,trainingset$SEXO)/sum(trainingset$SEXO)
+table(ccluster,trainingset$EPOC)/sum(trainingset$EPOC)
+table(ccluster,trainingset$NEUMONIA)/sum(trainingset$NEUMONIA)
+boxplot(trainingset$EDAD~ccluster)
+
+
+```

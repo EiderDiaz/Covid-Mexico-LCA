@@ -1,0 +1,154 @@
+---
+title: "SOnarLCA"
+author: "Jose Tamez"
+date: "5/16/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library("FRESA.CAD")
+library(epiR)
+library(clValid)
+library(mclust)
+
+source('~/GitHub/Covid-Mexico-LCA/clusterStability.r')
+
+```
+
+## The cluter wrappers for HLCM_EM
+```{r}
+latentClass <- function(data,formula,...)
+{
+  HLCM_EMM <- HLCM_EM(formula,data,...);
+  result <- list(model=HLCM_EMM )
+  class(result) <- "latentClass"
+  return (result)
+}
+
+predict.latentClass <- function(model,data)
+{
+  testResult <-  predict(model$model,data)
+  latentclass <- apply(attr(testResult,"probabilities"),1,which.max)
+  result <- list(classification = 2*latentclass + 1*(testResult >= 0.5),outcome=testResult,latentclass=latentclass)
+#  result <- list(classification = latentclass,outcome=testResult,latentclass=latentclass)
+  return(result)
+}
+
+```
+
+
+
+## Sonar Data Set
+
+Loading the data from the mlbech package.
+
+```{r FRESA Map, results = "hide", dpi=300, fig.height= 6.0, fig.width= 8.0}
+data(Sonar, package = "mlbench")
+Sonar$Class <- 1*(Sonar$Class == "M")
+table(Sonar$Class)
+
+```
+
+
+## Check performance
+```{r}
+
+LASSOSVM <- latentClass(Sonar,
+              formula = Class ~ .,
+              hysteresis = 0.10,
+              method=LASSO_1SE,
+               classMethod=e1071::svm,
+              classModel.Control=list(probability = TRUE),
+              family="binomial")
+
+prd <- predict(LASSOSVM,Sonar)
+testTable <- table(prd$outcome<0.5,Sonar$Class==0)
+epi.tests(testTable)
+
+BSWiMSVM <- latentClass(Sonar,
+              formula = Class ~ .,
+              hysteresis = 0.10,
+              method=BSWiMS.model,
+               classMethod=e1071::svm,
+              classModel.Control=list(probability = TRUE),
+              )
+
+prd <- predict(BSWiMSVM,Sonar)
+testTable <- table(prd$outcome<0.5,Sonar$Class==0)
+epi.tests(testTable)
+
+
+```
+
+
+
+## Targeted Clustering
+
+```{r}
+clsta <- clusterStability(data=Sonar, 
+                          clustermethod=latentClass,
+                          randomTests = 200, 
+                          trainFraction = 0.75,
+                          formula = Class ~ .,
+                          hysteresis = 0.10,
+                          method=LASSO_1SE,
+                           classMethod=e1071::svm,
+                          classModel.Control=list(probability = TRUE),
+                          family="binomial")
+
+```
+
+```{r}
+
+clsta <- clusterStability(data=Sonar, 
+                          clustermethod=latentClass,
+                          randomTests = 200, 
+                          trainFraction = 0.75,
+                          formula = Class ~ .,
+                          hysteresis = 0.10,
+                          method=BSWiMS.model,
+                           classMethod=e1071::svm,
+                          classModel.Control=list(probability = TRUE)
+                          )
+
+```
+
+## Get the consensus clusers
+
+```{r}
+
+ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.75,0.35,-0.05))
+table(ccluster,Sonar$Class)
+#testTable <- table(ccluster == 4  | ccluster == 8,Sonar$Class==0)
+#epi.tests(testTable)
+
+```
+
+
+## Review the consensus maps
+
+```{r}
+mycolors <- c("red","green","blue","yellow","cyan","lightblue")
+rowcolors <- mycolors[1+ccluster]
+hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus),
+                           RowSideColors = rowcolors ,
+                           ColSideColors = rowcolors ,
+                           trace="none",
+                           main="Cluster Co-Association")
+
+#heatmapsubsample <- sample(nrow(clsta$testConsesus),500)
+
+hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus),
+                           RowSideColors = rowcolors ,
+                           ColSideColors = rowcolors ,
+                           trace="none",
+                           main="Cluster Co-Association")
+
+```
+
