@@ -108,17 +108,19 @@ epi.tests(testTable)
 
 ```{r}
 
-clsta <- clusterStability(data=Sonar, 
-                          clustermethod=latentClass,
-                          randomTests = 200, 
-                          trainFraction = 0.75,
-                          formula = Class ~ .,
-                          hysteresis = 0.10,
-                          method=BSWiMS.model,
-                           classMethod=e1071::svm,
-                          classModel.Control=list(probability = TRUE)
-                          )
+#clsta <- clusterStability(data=Sonar, 
+#                          clustermethod=latentClass,
+#                          randomTests = 200, 
+#                          trainFraction = 0.75,
+#                          formula = Class ~ .,
+#                          hysteresis = 0.10,
+#                          method=BSWiMS.model,
+#                           classMethod=e1071::svm,
+#                          classModel.Control=list(probability = TRUE)
+#                          )
 #save(clsta,file="BSWIMS_SVM.RDATA")
+
+load(file="BSWIMS_SVM.RDATA")
 
 ```
 

@@ -31,7 +31,7 @@ source('~/GitHub/EvalCluster/R/clusterStability.r')
 ## Load the data
 
 ```{r}
-COVID19MEXICO <- read.csv("../Data/datos_abiertos_covid19/200514COVID19MEXICO.csv",
+COVID19MEXICO <- read.csv("./200514COVID19MEXICO.csv",
                            na.strings="99",
                           stringsAsFactors=FALSE)
 
@@ -105,7 +105,9 @@ trainingControlset <- controlSet[samplesControltrain,]
 
 table(datosDiagnosticoAlta$outcome)
 
-trainingset <- rbind(trainingCaseset,trainingControlset)
+#trainingset <- rbind(trainingCaseset,trainingControlset)
+load(file="COVID_TrainSet.RDATA")
+
 
 controltestset <- controlSet[-samplesControltrain,]
 casetestset <- caseSet[-samplesCasetrain,]
@@ -158,29 +160,30 @@ epi.tests(testTable)
 
 LASSOSVM$model$selectedfeatures
 
-clsta <- clusterStability(data=trainingset, 
-                          clustermethod=latentClass,
-                          randomTests = 200, 
-                          trainFraction = 0.75,
-                          formula = outcome ~ .,
-                          hysteresis = 0.10,
-                          method=LASSO_1SE,
-                           classMethod=e1071::svm,
-                          classModel.Control=list(probability = TRUE),
-                          family="binomial")
+#clsta <- clusterStability(data=trainingset, 
+#                          clustermethod=latentClass,
+#                          randomTests = 200, 
+#                          trainFraction = 0.75,
+#                          formula = outcome ~ .,
+#                          hysteresis = 0.10,
+#                          method=LASSO_1SE,
+#                           classMethod=e1071::svm,
+#                          classModel.Control=list(probability = TRUE),
+#                          family="binomial")
 
-save(clsta,file="Clustering_V4.Rdata")
-plot(clsta)
-summary(clsta)
-clsta$averageNumberofClusters
+#save(clsta,file="Clustering_V4.Rdata")
+
+load(file="Clustering_V4.Rdata")
+
+
+
+```
+
+
+```{r}
 
 ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.80,0.25,-0.05))
 table(ccluster,trainingset$outcome)
-testTable <- table(ccluster!=1 & ccluster!=3,trainingset$outcome==0)
-epi.tests(testTable)
-
-testTable <- table(ccluster==2,trainingset$outcome==0)
-epi.tests(testTable)
 
 heatmapsubsample <- sample(nrow(clsta$dataConcensus),500)
 mycolors <- c("red","green","blue","yellow","cyan","orange","pink","violet")
@@ -200,13 +203,33 @@ hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus[heatmapsubsample,heatmap
                            main="Cluster Co-Association")
 
 
-table(ccluster,trainingset$DIABETES)/sum(trainingset$DIABETES)
-table(ccluster,trainingset$HIPERTENSION)/sum(trainingset$HIPERTENSION)
-table(ccluster,trainingset$OBESIDAD)/sum(trainingset$OBESIDAD)
-table(ccluster,trainingset$SEXO)/sum(trainingset$SEXO)
-table(ccluster,trainingset$EPOC)/sum(trainingset$EPOC)
-table(ccluster,trainingset$NEUMONIA)/sum(trainingset$NEUMONIA)
-boxplot(trainingset$EDAD~ccluster)
-
 
 ```
+
+
+```{r}
+plotset <- trainingset;
+plotset$EDAD <- plotset$EDAD/100;
+plotset[,1:ncol(plotset)] <- sapply(plotset,as.numeric)
+
+subsetClass1 <- subset(plotset,ccluster==1)
+subsetClass2 <- subset(plotset,ccluster==2)
+subsetClass3 <- subset(plotset,ccluster==3)
+
+signature1 <- apply(subsetClass1,2,mean)
+signature2 <- apply(subsetClass2,2,mean)
+signature3 <- apply(subsetClass3,2,mean)
+orders <- order(signature1)
+boxplot(plotset[orders],main="COVID-19 Mexico",xlab="Feature",ylab="Count",las=2,cex.lab=0.75,cex.axis=0.35)
+lines(signature1[orders],col="green")
+lines(signature2[orders],col="blue")
+lines(signature3[orders],col="red")
+legend("topleft",
+           legend = c("Class 1","Class 2","Class 3"),
+           col = c("green","blue","red"),
+           lty = c(1,1,1),
+           lwd = c(1,1,1),
+           cex=0.5)
+
+```
+
