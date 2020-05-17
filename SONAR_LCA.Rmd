@@ -141,6 +141,22 @@ table(ccluster,Sonar$Class)
 ```{r}
 mycolors <- c("red","green","blue","yellow","cyan","pink","black","gray","violet")
 rowcolors <- mycolors[1+ccluster]
+
+orderindex <- 10*ccluster + clsta$trainJaccardpoint
+
+ordermatrix <- clsta$dataConcensus[order(-orderindex),order(-orderindex)]
+rowcolors <- rowcolors[order(-orderindex)]
+
+hplot <- gplots::heatmap.2(as.matrix(ordermatrix),
+                           Rowv=FALSE,
+                           Colv=FALSE,
+                           RowSideColors = rowcolors ,
+                           ColSideColors = rowcolors ,
+                           dendrogram = "none",
+                           trace="none",
+                           main="Cluster Co-Association")
+
+
 hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus),
                            RowSideColors = rowcolors ,
                            ColSideColors = rowcolors ,
