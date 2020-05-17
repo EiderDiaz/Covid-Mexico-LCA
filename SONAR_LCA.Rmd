@@ -91,18 +91,20 @@ epi.tests(testTable)
 ## Targeted Clustering
 
 ```{r}
-clsta <- clusterStability(data=Sonar, 
-                          clustermethod=latentClass,
-                          randomTests = 200, 
-                          trainFraction = 0.75,
-                          formula = Class ~ .,
-                          hysteresis = 0.10,
-                          method=LASSO_1SE,
-                           classMethod=e1071::svm,
-                          classModel.Control=list(probability = TRUE),
-                          family="binomial")
+#clsta <- clusterStability(data=Sonar, 
+#                          clustermethod=latentClass,
+#                          randomTests = 200, 
+#                          trainFraction = 0.75,
+#                          formula = Class ~ .,
+#                          hysteresis = 0.10,
+#                          method=LASSO_1SE,
+#                           classMethod=e1071::svm,
+#                          classModel.Control=list(probability = TRUE),
+#                          family="binomial")
 
 ```
+
+## Targeted Clustering LCA BSWiMS
 
 ```{r}
 
@@ -116,14 +118,15 @@ clsta <- clusterStability(data=Sonar,
                            classMethod=e1071::svm,
                           classModel.Control=list(probability = TRUE)
                           )
-save(clsta,file="BSWIMS_SVM.RDATA")
+#save(clsta,file="BSWIMS_SVM.RDATA")
+
 ```
 
 ## Get the consensus clusers
 
 ```{r}
 
-ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.50,0.30,-0.1))
+ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.60,0.30,-0.05))
 table(ccluster,Sonar$Class)
 #testTable <- table(ccluster == 4  | ccluster == 8,Sonar$Class==0)
 #epi.tests(testTable)
@@ -134,7 +137,7 @@ table(ccluster,Sonar$Class)
 ## Review the consensus maps
 
 ```{r}
-mycolors <- c("red","green","blue","yellow","cyan","pink","black","gray")
+mycolors <- c("red","green","blue","yellow","cyan","pink","black","gray","violet")
 rowcolors <- mycolors[1+ccluster]
 hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus),
                            RowSideColors = rowcolors ,
@@ -142,13 +145,37 @@ hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus),
                            trace="none",
                            main="Cluster Co-Association")
 
-#heatmapsubsample <- sample(nrow(clsta$testConsesus),500)
 
 hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus),
                            RowSideColors = rowcolors ,
                            ColSideColors = rowcolors ,
                            trace="none",
                            main="Cluster Co-Association")
+
+```
+
+## Analyze the clusters
+
+```{r}
+
+subsetClass1 <- subset(Sonar[,BSWiMSVM$model$selectedfeatures],ccluster==1)
+subsetClass2 <- subset(Sonar[,BSWiMSVM$model$selectedfeatures],ccluster==2)
+subsetClass3 <- subset(Sonar[,BSWiMSVM$model$selectedfeatures],ccluster==3)
+signature1 <- colMeans(subsetClass1)
+signature2 <- colMeans(subsetClass2)
+signature3 <- colMeans(subsetClass3)
+orders <- order(signature1)
+boxplot(subsetClass1[orders],lty=1,main="Sonar Signatures",xlab="Feature",ylab="Sonar",las=2)
+lines(signature1[orders],col="green")
+lines(signature2[orders],col="blue")
+lines(signature3[orders],col="red")
+legend("topleft",
+           legend = c("Class 1 (Mines)","Class 2 (Rocks)","Class 3 (Rocks)"),
+           col = c("green","blue","red"),
+           lty = c(1,1,1),
+           lwd = c(1,1,1),
+           cex=0.5)
+
 
 ```
 

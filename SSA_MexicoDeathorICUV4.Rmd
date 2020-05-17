@@ -174,7 +174,7 @@ plot(clsta)
 summary(clsta)
 clsta$averageNumberofClusters
 
-ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.90,0.65,-0.05))
+ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.80,0.25,-0.05))
 table(ccluster,trainingset$outcome)
 testTable <- table(ccluster!=1 & ccluster!=3,trainingset$outcome==0)
 epi.tests(testTable)
@@ -183,7 +183,7 @@ testTable <- table(ccluster==2,trainingset$outcome==0)
 epi.tests(testTable)
 
 heatmapsubsample <- sample(nrow(clsta$dataConcensus),500)
-mycolors <- c("red","green","blue","yellow","cyan","lightblue")
+mycolors <- c("red","green","blue","yellow","cyan","orange","pink","violet")
 rowcolors <- mycolors[1+ccluster[heatmapsubsample]]
 hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus[heatmapsubsample,heatmapsubsample]),
                            RowSideColors = rowcolors ,
