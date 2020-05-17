@@ -116,14 +116,14 @@ clsta <- clusterStability(data=Sonar,
                            classMethod=e1071::svm,
                           classModel.Control=list(probability = TRUE)
                           )
-
+save(clsta,file="BSWIMS_SVM.RDATA")
 ```
 
 ## Get the consensus clusers
 
 ```{r}
 
-ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.75,0.35,-0.05))
+ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.50,0.30,-0.1))
 table(ccluster,Sonar$Class)
 #testTable <- table(ccluster == 4  | ccluster == 8,Sonar$Class==0)
 #epi.tests(testTable)
@@ -134,7 +134,7 @@ table(ccluster,Sonar$Class)
 ## Review the consensus maps
 
 ```{r}
-mycolors <- c("red","green","blue","yellow","cyan","lightblue")
+mycolors <- c("red","green","blue","yellow","cyan","pink","black","gray")
 rowcolors <- mycolors[1+ccluster]
 hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus),
                            RowSideColors = rowcolors ,
