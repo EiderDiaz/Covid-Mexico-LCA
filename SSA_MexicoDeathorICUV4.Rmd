@@ -185,22 +185,47 @@ load(file="Clustering_V4.Rdata")
 ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.80,0.25,-0.05))
 table(ccluster,trainingset$outcome)
 
-heatmapsubsample <- sample(nrow(clsta$dataConcensus),500)
 mycolors <- c("red","green","blue","yellow","cyan","orange","pink","violet")
+
+
+ordermatrix <- clsta$dataConcensus
+heatmapsubsample <- sample(nrow(ordermatrix),500)
+orderindex <- 10*ccluster + clsta$trainJaccardpoint
+
+orderindex <- orderindex[heatmapsubsample]
+
+orderindex <- order(orderindex)
+
+ordermatrix <- ordermatrix[heatmapsubsample,heatmapsubsample]
+ordermatrix <- ordermatrix[orderindex,orderindex]
+
 rowcolors <- mycolors[1+ccluster[heatmapsubsample]]
-hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus[heatmapsubsample,heatmapsubsample]),
-                           RowSideColors = rowcolors ,
-                           ColSideColors = rowcolors ,
+rowcolors <- rowcolors[orderindex]
+
+
+hplot <- gplots::heatmap.2(as.matrix(ordermatrix),
+                           Rowv=FALSE,
+                           Colv=FALSE,
+                           RowSideColors = rowcolors,
+                           ColSideColors = rowcolors,
+                           dendrogram = "none",
                            trace="none",
                            main="Cluster Co-Association")
+
+
+#hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus[heatmapsubsample,heatmapsubsample]),
+#                           RowSideColors = rowcolors ,
+#                           ColSideColors = rowcolors ,
+#                           trace="none",
+#                           main="Cluster Co-Association")
 
 #heatmapsubsample <- sample(nrow(clsta$testConsesus),500)
 
-hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus[heatmapsubsample,heatmapsubsample]),
-                           RowSideColors = rowcolors ,
-                           ColSideColors = rowcolors ,
-                           trace="none",
-                           main="Cluster Co-Association")
+#hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus[heatmapsubsample,heatmapsubsample]),
+#                           RowSideColors = rowcolors ,
+#                           ColSideColors = rowcolors ,
+#                           trace="none",
+#                           main="Cluster Co-Association")
 
 
 
