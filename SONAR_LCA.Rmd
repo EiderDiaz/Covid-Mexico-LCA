@@ -17,7 +17,8 @@ library(epiR)
 library(clValid)
 library(mclust)
 
-source('~/GitHub/Covid-Mexico-LCA/clusterStability.r')
+source('~/GitHub/EvalCluster/R/clusterStability.r')
+
 
 ```
 
@@ -122,16 +123,30 @@ epi.tests(testTable)
 
 load(file="BSWIMS_SVM.RDATA")
 
+
+
 ```
+
+
 
 ## Get the consensus clusers
 
 ```{r}
 
-ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.60,0.30,-0.05))
+#ccluster <- getConsensusCluster(clsta,who="testing",thr=seq(0.60,0.30,-0.05))
+#ccluster <- getConsensusCluster(clsta,who="testing")
+#ccluster <- getConsensusCluster(clsta,thr=seq(0.60,0.30,-0.05))
+ccluster <- getConsensusCluster(clsta)
 table(ccluster,Sonar$Class)
 #testTable <- table(ccluster == 4  | ccluster == 8,Sonar$Class==0)
 #epi.tests(testTable)
+
+
+
+#rclass <- relaxConsensusCluster(clsta,ccluster,ww=13,loops=21);
+rclass <- relaxConsensusCluster(clsta,ccluster);
+table(ccluster,rclass)
+table(rclass,Sonar$Class)
 
 ```
 
@@ -139,12 +154,30 @@ table(ccluster,Sonar$Class)
 ## Review the consensus maps
 
 ```{r}
-mycolors <- c("red","green","blue","yellow","cyan","pink","black","gray","violet")
+mycolors <- c("red","green","blue","yellow","cyan","pink","black","gray","violet","orange","brown")
 rowcolors <- mycolors[1+ccluster]
 
-orderindex <- 10*ccluster + clsta$trainJaccardpoint
+orderindex <- 10*ccluster - clsta$trainJaccardpoint
 
-ordermatrix <- clsta$dataConcensus[order(-orderindex),order(-orderindex)]
+ordermatrix <- clsta$dataConcensus[order(-orderindex),order(orderindex)]
+#ordermatrix <- clsta$testConsesus[order(-orderindex),order(-orderindex)]
+rowcolors <- rowcolors[order(-orderindex)]
+
+hplot <- gplots::heatmap.2(as.matrix(ordermatrix),
+                           Rowv=FALSE,
+                           Colv=FALSE,
+                           RowSideColors = rowcolors ,
+                           ColSideColors = rowcolors ,
+                           dendrogram = "none",
+                           trace="none",
+                           main="Cluster Co-Association")
+
+rowcolors <- mycolors[1+rclass]
+
+orderindex <- 10*rclass - clsta$trainJaccardpoint
+
+#ordermatrix <- clsta$testConsesus[order(-orderindex),order(-orderindex)]
+ordermatrix <- clsta$dataConcensus[order(-orderindex),order(orderindex)]
 rowcolors <- rowcolors[order(-orderindex)]
 
 hplot <- gplots::heatmap.2(as.matrix(ordermatrix),
@@ -164,11 +197,11 @@ hplot <- gplots::heatmap.2(as.matrix(clsta$dataConcensus),
                            main="Cluster Co-Association")
 
 
-hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus),
-                           RowSideColors = rowcolors ,
-                           ColSideColors = rowcolors ,
-                           trace="none",
-                           main="Cluster Co-Association")
+#hplot <- gplots::heatmap.2(as.matrix(clsta$testConsesus),
+#                           RowSideColors = rowcolors ,
+#                           ColSideColors = rowcolors ,
+#                           trace="none",
+#                           main="Cluster Co-Association")
 
 ```
 

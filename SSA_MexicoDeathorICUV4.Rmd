@@ -184,6 +184,11 @@ load(file="Clustering_V4.Rdata")
 
 ccluster <- getConsensusCluster(clsta,who="training",thr=seq(0.80,0.25,-0.05))
 table(ccluster,trainingset$outcome)
+rclass <- relaxConsensusCluster(clsta,ccluster,ww=3,loops=5);
+table(ccluster,rclass)
+table(rclass,trainingset$outcome)
+ccluster <- rclass
+
 
 mycolors <- c("red","green","blue","yellow","cyan","orange","pink","violet")
 
