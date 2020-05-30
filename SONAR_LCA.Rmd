@@ -161,13 +161,14 @@ orderindex <- 10*ccluster - clsta$trainJaccardpoint
 
 ordermatrix <- clsta$dataConcensus[order(-orderindex),order(orderindex)]
 #ordermatrix <- clsta$testConsesus[order(-orderindex),order(-orderindex)]
-rowcolors <- rowcolors[order(-orderindex)]
+ccolcolors <- rowcolors[order(orderindex)]
+crowcolors <- rowcolors[order(-orderindex)]
 
 hplot <- gplots::heatmap.2(as.matrix(ordermatrix),
                            Rowv=FALSE,
                            Colv=FALSE,
-                           RowSideColors = rowcolors ,
-                           ColSideColors = rowcolors ,
+                           RowSideColors = crowcolors ,
+                           ColSideColors = ccolcolors ,
                            dendrogram = "none",
                            trace="none",
                            main="Cluster Co-Association")
@@ -178,13 +179,14 @@ orderindex <- 10*rclass - clsta$trainJaccardpoint
 
 #ordermatrix <- clsta$testConsesus[order(-orderindex),order(-orderindex)]
 ordermatrix <- clsta$dataConcensus[order(-orderindex),order(orderindex)]
-rowcolors <- rowcolors[order(-orderindex)]
+ccolcolors <- rowcolors[order(orderindex)]
+crowcolors <- rowcolors[order(-orderindex)]
 
 hplot <- gplots::heatmap.2(as.matrix(ordermatrix),
                            Rowv=FALSE,
                            Colv=FALSE,
-                           RowSideColors = rowcolors ,
-                           ColSideColors = rowcolors ,
+                           RowSideColors = crowcolors ,
+                           ColSideColors = ccolcolors ,
                            dendrogram = "none",
                            trace="none",
                            main="Cluster Co-Association")
